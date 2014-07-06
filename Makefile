@@ -7,13 +7,13 @@
 # License: GPLv2.
 # This Revision: $Id: Makefile 362 2007-06-25 14:38:21Z cs $
 
-DEVICE=attiny85
+DEVICE=atmega8
 AVRDUDE = avrdude -c stk200 -P lpt1 -p $(DEVICE)
 # The two lines above are for "avrdude" and the STK500 programmer connected
 # to an USB to serial converter to a Mac running Mac OS X.
 # Choose your favorite programmer and interface.
 
-COMPILE = avr-gcc -Wall -Os -Iusbdrv -I. -mmcu=$(DEVICE) -DF_CPU=16500000 -DDEBUG_LEVEL=0
+COMPILE = avr-gcc -Wall -Os -Iusbdrv -I. -mmcu=$(DEVICE) -DF_CPU=16000000 -DDEBUG_LEVEL=0
 # NEVER compile the final product with debugging! Any debug output will
 # distort timing so that the specs can't be met.
 

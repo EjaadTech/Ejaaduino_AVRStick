@@ -49,7 +49,7 @@ static uchar    reportBuffer[2];    /* buffer for HID reports */
 static uchar    idleRate;           /* in 4 ms units */
 
 static uchar    adcPending;
-static uchar	currentAdcChannel=2;
+static uchar	currentAdcChannel=0;
 static unsigned int		sampleNum=0;
 
 static uchar    valueBuffer[16];
@@ -57,7 +57,7 @@ static uchar    *nextDigit;
 
 /* ------------------------------------------------------------------------- */
 
-PROGMEM char usbHidReportDescriptor[USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] = { /* USB report descriptor */
+PROGMEM const char usbHidReportDescriptor[USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] = { /* USB report descriptor */
     0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
     0x09, 0x06,                    // USAGE (Keyboard)
     0xa1, 0x01,                    // COLLECTION (Application)
@@ -134,13 +134,13 @@ uchar   key = 0;
 /* ------------------------------------------------------------------------- */
 static void changeAdcChannel(void)
 {
-	if(currentAdcChannel==3){
-		currentAdcChannel=2;
-		ADMUX = UTIL_BIN8(1001, 0010);	/* Vref=2.56V, measure ADC2 */
+	if(currentAdcChannel==0){
+		currentAdcChannel=1;
+		ADMUX = 0b01000001;	/* Vref=avcc, measure ADC1 */
     }
 	else{
-		currentAdcChannel=3;
-		ADMUX = UTIL_BIN8(1001, 0011);  /* Vref=2.56V, measure ADC3 */
+		currentAdcChannel=0;
+		ADMUX = 0b01000000;  /* Vref=avcc, measure ADC0 */
 	}
 }
 
@@ -150,12 +150,12 @@ static void evaluateADC(unsigned int value)
 uchar   digit;
 unsigned int	timestamp;	//Keep track of how many readings we've made so we can add it to the report.
 
-    value += value + (value >> 1);  /* value = value * 2.5 for output in mV */
+    //value += value + (value >> 1);  /* value = value * 2.5 for output in mV */
 	
     nextDigit = &valueBuffer[sizeof(valueBuffer)];	//The Buffer is constructed 'backwards,' so point to the end of the Value Buffer before adding the values.
     *--nextDigit = 0xff;/* terminate with 0xff */
     *--nextDigit = 0;
-    if(currentAdcChannel==2)*--nextDigit = KEY_TAB;	//We'll seperate the two ADC readings with a 'TAB'
+    if(currentAdcChannel==0)*--nextDigit = KEY_TAB;	//We'll seperate the two ADC readings with a 'TAB'
 	else *--nextDigit = KEY_RETURN;						//After the second ADC reading, a carriage return character will be sent.
     //Convert the ADC reading to ASCII.
 	do{
@@ -170,7 +170,7 @@ unsigned int	timestamp;	//Keep track of how many readings we've made so we can a
     }while(value != 0);
 	
 	//Prepend each report with a timetamp.
-	if(currentAdcChannel==2){
+	if(currentAdcChannel==0){
 		timestamp=sampleNum++;
 		*--nextDigit = KEY_TAB;
 		do{
@@ -203,9 +203,9 @@ static void timerPoll(void)
 {
 static uchar timerCnt;
 
-    if(TIFR & (1 << TOV1)){	//This flag is triggered at 60 hz.
+    if(TIFR & (1 << TOV1)){	//This flag is triggered at 30.5 hz.
         TIFR = (1 << TOV1); /* clear overflow */
-		if(++timerCnt >= 31){		 /* ~ 0.5 second interval */
+		if(++timerCnt >= 15){		 /* ~ 0.5 second interval */
             timerCnt = 0;
 			adcPending = 1;
 			ADCSRA |= (1 << ADSC);  /* start next conversion */
@@ -216,14 +216,15 @@ static uchar timerCnt;
 /* ------------------------------------------------------------------------- */
 static void timerInit(void)
 {
-    TCCR1 = 0x0b;           /* select clock: 16.5M/1k -> overflow rate = 16.5M/256k = 62.94 Hz */
+    TCCR1B = 0b00000010;
+	/* select clock: 16M/8 -> overflow rate = 16M/(65535*8) = 30.5 Hz */
 }
 
 /* ------------------------------------------------------------------------- */
 static void adcInit(void)
 {
-    ADMUX = UTIL_BIN8(1001, 0010);	 /* vref = 2.56V, measure ADC2 (PB4) */
-	ADCSRA = UTIL_BIN8(1000, 0111); /* enable ADC, not free running, interrupt disable, rate = 1/128 */
+    ADMUX = 0b01000000;	 /* vref = avcc, measure ADC0 */
+	ADCSRA = 0b10000111; /* enable ADC, not free running, interrupt disable, rate = 1/128 */
 }
 
 
@@ -323,35 +324,8 @@ int main(void)
 {
 //uchar   i;
 unsigned int i;
-uchar   calibrationValue;
+	DDRD = (unsigned char)~((1 << 2)|(1 << 6)|(1 << 7));	//ZP
 
-    calibrationValue = eeprom_read_byte(0); /* calibration value from last time */
-    if(calibrationValue != 0xff){
-        OSCCAL = calibrationValue;
-    }
-    //odDebugInit();
-	
-	//Production Test Routine - Turn on both LEDs and an LED on the SparkFun Pogo Test Bed.
-	DDRB |= 1 << WHITE_LED | 1 << YELLOW_LED | 1<<4;   /* output for LED */
-	sbi(PORTB, WHITE_LED);
-    for(i=0;i<20;i++){  /* 300 ms disconnect */
-        _delay_ms(15);
-    }
-	cbi(PORTB, WHITE_LED);
-	
-	sbi(PORTB, YELLOW_LED);
-    for(i=0;i<20;i++){  /* 300 ms disconnect */
-        _delay_ms(15);
-    }
-	cbi(PORTB, YELLOW_LED);
-	
-	sbi(PORTB, 4);
-    for(i=0;i<20;i++){  /* 300 ms disconnect */
-        _delay_ms(15);
-    }	
-	cbi(PORTB, 4);
-	
-	DDRB &= ~(1<<4);
 	
 	//Initialize the USB Connection with the host computer.
     usbDeviceDisconnect();
@@ -380,4 +354,3 @@ uchar   calibrationValue;
     }
     return 0;
 }
-
